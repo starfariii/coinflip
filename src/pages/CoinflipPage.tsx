@@ -1,32 +1,38 @@
 import React, { useEffect, useState } from 'react';
 import { CoinsIcon, UserIcon } from 'lucide-react';
 import { CreateMatchModal } from '../components/CreateMatchModal';
+import { CoinflipGame } from '../components/CoinflipGame';
 import { useMatchStore } from '../store/matchStore';
+import { useGameStore } from '../store/gameStore';
 import { supabase } from '../lib/supabase';
 
 export const CoinflipPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'all' | 'my'>('all');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [availableItems, setAvailableItems] = useState<any[]>([]);
+  const [isGameModalOpen, setIsGameModalOpen] = useState(false);
+  const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
+  const [playerSide, setPlayerSide] = useState<'heads' | 'tails' | null>(null);
   const { matches, loading, fetchMatches, createMatch, joinMatch } = useMatchStore();
+  const { transferItems } = useGameStore();
   const [userId, setUserId] = useState<string | null>(null);
+  const [availableItems, setAvailableItems] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchItems = async () => {
-      const { data: items } = await supabase.from('items').select('*');
-      if (items) setAvailableItems(items);
-    };
-
-    const fetchUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) setUserId(user.id);
+      if (user) {
+        setUserId(user.id);
+        const { data: items } = await supabase
+          .from('items')
+          .select('*')
+          .eq('user_id', user.id);
+        if (items) setAvailableItems(items);
+      }
     };
 
     fetchItems();
-    fetchUser();
     fetchMatches();
 
-    // Subscribe to changes
     const channel = supabase
       .channel('matches')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {
@@ -53,25 +59,39 @@ export const CoinflipPage: React.FC = () => {
       const match = matches.find(m => m.id === matchId);
       if (!match) return;
 
-      const matchValue = match.items.reduce((sum, item) => sum + item.value, 0);
-      const targetValue = matchValue; // You want to match this value approximately
+      const oppositeSide = match.selected_side === 'heads' ? 'tails' : 'heads';
+      setPlayerSide(oppositeSide);
+      setCurrentMatchId(matchId);
 
-      // Find a combination of items that matches the target value within 10%
-      const validItems = availableItems.filter(item => {
-        const totalValue = item.value;
-        return totalValue >= matchValue * 0.9 && totalValue <= matchValue * 1.1;
-      });
-
-      if (validItems.length === 0) {
-        alert('No valid items found to join this match');
-        return;
-      }
-
-      await joinMatch(matchId, [validItems[0].id]);
+      await joinMatch(matchId, availableItems.map(item => item.id));
+      setIsGameModalOpen(true);
     } catch (error) {
       console.error('Error joining match:', error);
       alert(error instanceof Error ? error.message : 'Error joining match');
     }
+  };
+
+  const handleGameComplete = async (won: boolean) => {
+    if (!currentMatchId || !userId) return;
+
+    const match = matches.find(m => m.id === currentMatchId);
+    if (!match) return;
+
+    // Transfer items to winner
+    const allItems = match.items.map(item => item.id);
+    if (won) {
+      await transferItems(userId, allItems);
+    } else {
+      const opponent = match.items.find(item => item.user_id !== userId)?.user_id;
+      if (opponent) {
+        await transferItems(opponent, allItems);
+      }
+    }
+
+    setIsGameModalOpen(false);
+    setCurrentMatchId(null);
+    setPlayerSide(null);
+    fetchMatches();
   };
 
   const displayedMatches = activeTab === 'my' 
@@ -181,6 +201,14 @@ export const CoinflipPage: React.FC = () => {
         onCreateMatch={handleCreateMatch}
         availableItems={availableItems}
       />
+
+      {isGameModalOpen && currentMatchId && playerSide && (
+        <CoinflipGame
+          matchId={currentMatchId}
+          playerSide={playerSide}
+          onGameComplete={handleGameComplete}
+        />
+      )}
     </div>
   );
 };

@@ -13,11 +13,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setMessage(null);
 
     try {
       if (isSignUp) {
@@ -29,14 +31,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           }
         });
         if (signUpError) throw signUpError;
+        setMessage('Check your email for the confirmation link');
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password
         });
         if (signInError) throw signInError;
+        onClose();
       }
-      onClose();
       setEmail('');
       setPassword('');
     } catch (err) {
@@ -84,6 +87,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           {error && (
             <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-400 text-sm">
               {error}
+            </div>
+          )}
+
+          {message && (
+            <div className="mb-4 p-3 bg-green-900/50 border border-green-700 rounded-lg text-green-400 text-sm">
+              {message}
             </div>
           )}
 

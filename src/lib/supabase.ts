@@ -13,6 +13,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     detectSessionInUrl: true,
     flowType: 'pkce',
-    redirectTo: window.location.origin
+    redirectTo: `${window.location.origin}/auth/callback`
   }
 });
